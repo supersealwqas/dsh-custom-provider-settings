@@ -53,9 +53,25 @@ pnpm --version
 
 安装、升级或卸载插件前，建议先停止正在运行的 WebUI，操作完成后再重新启动。
 
-### 方法一：从 GitHub 安装（推荐）
+### 方法一：安装 Release TGZ（推荐）
 
-不需要克隆 DeepSeek Harness 源码。首次运行时，`npx` 会下载官方 DSH NPM 包及其依赖：
+这种方式安装经过测试的固定版本，不会随着 `main` 分支变化。安装 `v0.4.0`：
+
+```powershell
+npx --yes -p @deepseek-ai/dsh dsh plugin --profile web add https://github.com/supersealwqas/dsh-custom-provider-settings/releases/download/v0.4.0/dsh-custom-provider-settings-0.4.0.tgz
+```
+
+安装完成后启动 WebUI：
+
+```powershell
+npx --yes -p @deepseek-ai/dsh dsh web
+```
+
+WebUI 默认地址为 `http://127.0.0.1:3080`。如果已经全局安装 `dsh`，可以使用更短的 `dsh plugin ...` 和 `dsh web`。
+
+### 方法二：从 GitHub 主分支安装
+
+这种方式直接安装仓库当前的 `main` 分支，适合希望立即获取最新改动的用户。首次运行时，`npx` 会下载官方 DSH NPM 包及其依赖：
 
 ```powershell
 npx --yes -p @deepseek-ai/dsh dsh plugin --profile web add github:supersealwqas/dsh-custom-provider-settings
@@ -67,9 +83,7 @@ npx --yes -p @deepseek-ai/dsh dsh plugin --profile web add github:supersealwqas/
 npx --yes -p @deepseek-ai/dsh dsh web
 ```
 
-WebUI 默认地址为 `http://127.0.0.1:3080`。如果已经全局安装 `dsh`，可以使用更短的 `dsh plugin ...` 和 `dsh web`。
-
-### 方法二：从本地仓库安装
+### 方法三：从本地仓库安装
 
 这种方法适合修改或调试插件。进入本仓库后生成 TGZ 安装包，再安装到 Web profile：
 
@@ -84,7 +98,7 @@ npx --yes -p @deepseek-ai/dsh dsh web
 
 ### 升级
 
-停止 WebUI 后，再次执行对应的 `add` 命令即可更新插件，不需要先卸载。完成后重新启动 WebUI。
+停止 WebUI 后，再次执行对应的 `add` 命令即可更新插件，不需要先卸载。使用 TGZ 方式时，请把安装命令中的版本号和文件名改为目标 Release 的版本。完成后重新启动 WebUI。
 
 ### 卸载
 

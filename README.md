@@ -53,9 +53,25 @@ If `corepack enable` fails because of insufficient permissions, run it once from
 
 Stop the running WebUI before installing, upgrading, or removing the plugin, then restart it when the command completes.
 
-### Option 1: Install from GitHub (recommended)
+### Option 1: Install a release TGZ (recommended)
 
-This method does not require a DeepSeek Harness source checkout. On first use, `npx` downloads the official DSH NPM package and its dependencies:
+This installs a tested, fixed version that does not change with the `main` branch. To install `v0.4.0`:
+
+```powershell
+npx --yes -p @deepseek-ai/dsh dsh plugin --profile web add https://github.com/supersealwqas/dsh-custom-provider-settings/releases/download/v0.4.0/dsh-custom-provider-settings-0.4.0.tgz
+```
+
+Start the WebUI after installation:
+
+```powershell
+npx --yes -p @deepseek-ai/dsh dsh web
+```
+
+The WebUI listens on `http://127.0.0.1:3080` by default. If `dsh` is installed globally, the shorter `dsh plugin ...` and `dsh web` forms are equivalent.
+
+### Option 2: Install from the GitHub main branch
+
+This installs the current `main` branch and is suitable for users who want the newest changes immediately. On first use, `npx` downloads the official DSH NPM package and its dependencies:
 
 ```powershell
 npx --yes -p @deepseek-ai/dsh dsh plugin --profile web add github:supersealwqas/dsh-custom-provider-settings
@@ -67,9 +83,7 @@ Start the WebUI after installation:
 npx --yes -p @deepseek-ai/dsh dsh web
 ```
 
-The WebUI listens on `http://127.0.0.1:3080` by default. If `dsh` is installed globally, the shorter `dsh plugin ...` and `dsh web` forms are equivalent.
-
-### Option 2: Install from a local checkout
+### Option 3: Install from a local checkout
 
 Use this method when changing or debugging the plugin. Create a TGZ package in the repository and install it into the Web profile:
 
@@ -84,7 +98,7 @@ The `dist` directory and TGZ files are ignored by `.gitignore` and are not uploa
 
 ### Upgrade
 
-Stop the WebUI and run the matching `add` command again. DSH updates the installed plugin without requiring a separate removal. Restart the WebUI afterward.
+Stop the WebUI and run the matching `add` command again. DSH updates the installed plugin without requiring a separate removal. For a TGZ installation, replace the version and filename in the command with the target release. Restart the WebUI afterward.
 
 ### Uninstall
 
