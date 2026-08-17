@@ -1,8 +1,10 @@
-# dsh-custom-provider-settings
+# DSH Custom Provider Settings Plugin
 
 English | [中文](README.zh.md)
 
-A WebUI plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) that adds request headers, image-input declarations, and reasoning-level settings to user-defined custom model providers without modifying Harness source files.
+A WebUI plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) that adds request headers, image-input declarations, and reasoning-level settings to user-defined custom model providers. It loads through the DSH plugin system and does not modify Harness source files.
+
+> The plugin applies only to providers carrying the Custom tag. DeepSeek official providers and built-in third-party providers retain their original configuration and request behavior.
 
 ## Features
 
@@ -11,11 +13,12 @@ A WebUI plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-ha
 - Declare each custom model as text-only or text-and-image capable.
 - Configure the reasoning levels exposed for each model and map every level to the value sent to its API.
 - Set a provider-level default reasoning level.
-- Keep DeepSeek official providers and built-in third-party providers on their original Harness behavior.
+- Configure the reasoning parameter format for `openai-completions` providers.
+- Restore the original Harness request-header behavior by clearing all custom headers.
 
-## Screenshots
+## Demo
 
-### Provider settings
+### Custom provider settings
 
 The plugin inserts request-header and model-capability fields into the existing custom-provider form. The highlighted areas show `User-Agent`, additional headers, image input, the default reasoning level, and per-model reasoning mappings.
 
@@ -27,49 +30,81 @@ Enabled reasoning levels appear in the conversation composer. The example expose
 
 ![Reasoning-level selector in the DeepSeek Harness conversation composer](assets/img02.png)
 
-## Requirements
+## Installation
 
-- DeepSeek Harness `0.1.0-rc.6` or a compatible release.
-- The `web` profile.
-- Node.js `^22.19.0` or `>=24.0.0`.
+### Prerequisites
 
-Stop the WebUI before installing or upgrading the plugin, then restart it after installation.
+- Node.js `^22.19.0` or `>=24.0.0`; Node.js 24 LTS is recommended.
+- Git, used to install the plugin from GitHub.
+- pnpm. `dsh plugin` invokes pnpm in the Web profile directory to manage plugins.
+- DeepSeek Harness `0.1.0-rc.6` or a compatible release with the `web` profile.
 
-## Install or upgrade
-
-### From GitHub
-
-Run the following commands with the official npm package:
+Check the environment in PowerShell:
 
 ```powershell
-npx --yes @deepseek-ai/dsh plugin --profile web add github:supersealwqas/dsh-custom-provider-settings
-npx --yes @deepseek-ai/dsh web
+node --version
+npx --version
+git --version
+corepack enable
+pnpm --version
 ```
 
-Running the `add` command again updates the installed checkout. If `dsh` is installed globally, the shorter `dsh plugin ...` and `dsh web` forms are equivalent. The WebUI listens on `http://127.0.0.1:3080` by default.
+If `corepack enable` fails because of insufficient permissions, run it once from an administrator PowerShell or follow the [pnpm installation guide](https://pnpm.io/installation).
 
-### From a local checkout
+Stop the running WebUI before installing, upgrading, or removing the plugin, then restart it when the command completes.
 
-Create a tarball in the repository's ignored `dist` directory and install it into the Web profile:
+### Option 1: Install from GitHub (recommended)
+
+This method does not require a DeepSeek Harness source checkout. On first use, `npx` downloads the official DSH NPM package and its dependencies:
+
+```powershell
+npx --yes -p @deepseek-ai/dsh dsh plugin --profile web add github:supersealwqas/dsh-custom-provider-settings
+```
+
+Start the WebUI after installation:
+
+```powershell
+npx --yes -p @deepseek-ai/dsh dsh web
+```
+
+The WebUI listens on `http://127.0.0.1:3080` by default. If `dsh` is installed globally, the shorter `dsh plugin ...` and `dsh web` forms are equivalent.
+
+### Option 2: Install from a local checkout
+
+Use this method when changing or debugging the plugin. Create a TGZ package in the repository and install it into the Web profile:
 
 ```powershell
 New-Item -ItemType Directory -Force .\dist
 npm pack --pack-destination .\dist
-npx --yes @deepseek-ai/dsh plugin --profile web add .\dist\dsh-custom-provider-settings-0.4.0.tgz
-npx --yes @deepseek-ai/dsh web
+npx --yes -p @deepseek-ai/dsh dsh plugin --profile web add .\dist\dsh-custom-provider-settings-0.4.0.tgz
+npx --yes -p @deepseek-ai/dsh dsh web
 ```
 
-## Use
+The `dist` directory and TGZ files are ignored by `.gitignore` and are not uploaded to the repository.
 
-1. Open Settings, then Models.
-2. Edit a provider carrying the Custom tag, or choose Add provider and Add a custom provider.
-3. In the inserted Request headers area, enter a `User-Agent` and any other headers required by the endpoint.
-4. Under Model capabilities, choose each model's input capability and reasoning capability. Select Text and images only when both the API and model support image input.
+### Upgrade
+
+Stop the WebUI and run the matching `add` command again. DSH updates the installed plugin without requiring a separate removal. Restart the WebUI afterward.
+
+### Uninstall
+
+```powershell
+npx --yes -p @deepseek-ai/dsh dsh plugin --profile web remove dsh-custom-provider-settings
+```
+
+Restart the WebUI to remove the plugin controls and behavior. Provider extension fields already stored in `settings.yaml` are not deleted automatically.
+
+## Usage
+
+1. Open Settings > Models.
+2. Edit a provider carrying the Custom tag that already contains a model, or choose Add provider > Add a custom provider and enter its models.
+3. In the inserted Request headers area, enter a `User-Agent` and any other headers required by the endpoint. Leave the fields empty to retain the Harness defaults.
+4. Under Model capabilities, choose each model's input and reasoning capabilities. Select Text and images only when both the API and model support image input.
 5. Select the enabled reasoning levels and enter the exact API value for each one. Choose a default level if required.
 6. Use the original Apply or Create provider button. The plugin saves its fields after the Harness form succeeds.
 7. Start a new conversation, select the custom model, and choose one of its configured reasoning levels.
 
-Fetch available models uses the request-header values currently entered in the same form, including values that have not been saved yet.
+Fetch available models uses the request-header values currently entered in the same form, including values that have not been saved yet. This allows model discovery to work with endpoints that require a particular `User-Agent` or another custom header.
 
 ## Verify image input
 
@@ -102,19 +137,35 @@ Header values are stored as ordinary text in `settings.yaml`. Keep API keys and 
 
 Clearing every custom header removes the override and restores the original Harness request-header behavior.
 
-## Scope and limitations
+## Troubleshooting
 
+### The plugin settings do not appear
+
+Confirm that the plugin is installed in the `web` profile and restart the WebUI after installation. The plugin mounts only on user-defined custom providers, and a provider without models has no editable model settings.
+
+### Fetch available models still fails
+
+Confirm the Base URL, API key, and API protocol first, then check every `User-Agent` or additional header required by the endpoint. The plugin includes unsaved header values from the active form in the discovery request.
+
+### Reasoning levels or image upload are missing in a conversation
+
+Save the provider, start a new conversation, and select the model again. Reasoning levels must be enabled for that model, and image upload requires the model to be declared as Text and images.
+
+## Compatibility and limitations
+
+- The current release targets the public plugin interfaces and WebUI in DeepSeek Harness `0.1.0-rc.6`.
 - The plugin mounts only on user-defined providers reported by Harness with `declared: true`.
 - DeepSeek official providers and built-in third-party providers are not mounted or modified.
 - Model names, context windows, maximum output values, and other fields owned by the original form are preserved when plugin settings are saved.
-- The plugin does not patch DeepSeek Harness source files.
 - The current Models page has no provider-form plugin slot. This plugin locates the original accessible labels and mounts its React controls at runtime, so a future Harness form change may require a plugin update.
+- The plugin does not patch DeepSeek Harness source files.
 
-## Development
+## Development and verification
 
 ```powershell
 npm test
 node --check client.js
+npm pack --dry-run
 ```
 
 ## Attribution
