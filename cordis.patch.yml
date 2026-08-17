@@ -1,0 +1,4 @@
+# Mount the host and Web client halves of the model request settings plugin.
+- insert:
+    - id: custom-provider-settings
+      name: dsh-custom-provider-settings

@@ -1,0 +1,63 @@
+{
+  "name": "dsh-custom-provider-settings",
+  "version": "0.4.0",
+  "description": "Request headers, image input, and reasoning settings for custom DeepSeek Harness providers",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "plugin",
+    "user-agent",
+    "reasoning",
+    "multimodal"
+  ],
+  "author": "supersealwqas",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/supersealwqas/dsh-custom-provider-settings.git"
+  },
+  "homepage": "https://github.com/supersealwqas/dsh-custom-provider-settings#readme",
+  "bugs": {
+    "url": "https://github.com/supersealwqas/dsh-custom-provider-settings/issues"
+  },
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "request-headers.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "README.i18n.yaml",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-api-remotes"
+      ]
+    }
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "license": "MIT"
+}

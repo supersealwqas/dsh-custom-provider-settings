@@ -1,0 +1,25 @@
+# Dependencies and test output
+node_modules/
+coverage/
+
+# Local package artifacts
+dist/
+*.tgz
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
