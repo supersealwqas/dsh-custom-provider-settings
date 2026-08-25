@@ -32,6 +32,13 @@ test('registers the Web client and builds provider settings without touching sec
     throw new Error(`unexpected dependency: ${id}`)
   })
   const helpers = plugin.__test
+  assert.deepEqual(helpers.userAgentPresets, [
+    'claude-cli/2.1.161 (external, cli)',
+    'claude-cli/2.1.161',
+    'claude-code/1.0.0',
+    'claude-code/0.1.0',
+    'Kilo-Code/1.0',
+  ])
   const drafts = helpers.providerDrafts({
     revision: 4,
     value: {
@@ -49,6 +56,7 @@ test('registers the Web client and builds provider settings without touching sec
         relay: {
           apiKeyEnv: 'RELAY_API_KEY',
           headers: { 'User-Agent': 'relay/1.0', 'X-Tenant': 'demo' },
+          compat: { supportsDeveloperRole: false },
           models: [{ id: 'alpha', name: 'Alpha', contextWindow: 1000, input: ['text', 'image'] }],
         },
       },
@@ -60,6 +68,7 @@ test('registers the Web client and builds provider settings without touching sec
     { name: 'X-Tenant', value: 'demo' },
   ])
   assert.equal(drafts[0].defaultEffort, 'high')
+  assert.equal(drafts[0].systemRole, true)
   assert.equal(drafts[0].models[0].inputMode, 'image')
 
   const configured = {
@@ -75,10 +84,6 @@ test('registers the Web client and builds provider settings without touching sec
     'User-Agent': 'relay/1.0',
     'X-Tenant': 'demo',
   })
-  assert.deepEqual(helpers.buildModels(configured), [{
-    id: 'alpha', name: 'Alpha', contextWindow: 1000, input: ['text', 'image'],
-    reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' },
-  }])
   assert.deepEqual(helpers.mergeModelSettings([{
     id: 'alpha', name: 'Renamed by the original form', contextWindow: 2000,
   }], configured.models), [{
@@ -101,7 +106,15 @@ test('registers the Web client and builds provider settings without touching sec
     },
     { op: 'set', path: ['providers', 'relay', 'reasoning'], value: 'high' },
     { op: 'unset', path: ['providers', 'relay', 'compat', 'thinkingFormat'] },
+    { op: 'set', path: ['providers', 'relay', 'compat', 'supportsDeveloperRole'], value: false },
   ])
+  assert.deepEqual(helpers.extensionOps({
+    ...configured,
+    api: 'openai-responses',
+    systemRole: false,
+  }, { models: [{ id: 'alpha', contextWindow: 2000 }] }).at(-1), {
+    op: 'unset', path: ['providers', 'relay', 'compat', 'supportsDeveloperRole'],
+  })
 
   const duplicate = {
     ...configured,
@@ -115,16 +128,44 @@ test('registers the Web client and builds provider settings without touching sec
     ...configured,
     headers: [{ id: '1', name: 'user-agent', value: 'duplicate' }],
   }).key, 'validationUserAgentDuplicate')
-  assert.deepEqual(helpers.buildModels({
-    models: [
-      { ...helpers.modelState({ id: 'inherit' }), inputMode: 'inherit' },
-      { ...helpers.modelState({ id: 'text' }), inputMode: 'text' },
-      { ...helpers.modelState({ id: 'image' }), inputMode: 'image' },
-    ],
-  }), [
+  assert.deepEqual(helpers.mergeModelSettings([
+    { id: 'inherit' },
+    { id: 'text' },
+    { id: 'image' },
+  ], [
+    { ...helpers.modelState({ id: 'inherit' }), inputMode: 'inherit' },
+    { ...helpers.modelState({ id: 'text' }), inputMode: 'text' },
+    { ...helpers.modelState({ id: 'image' }), inputMode: 'image' },
+  ]), [
     { id: 'inherit' },
     { id: 'text', input: ['text'] },
     { id: 'image', input: ['text', 'image'] },
+  ])
+  const globalDraft = helpers.globalHeaderDraft({
+    globalHeaders: { 'User-Agent': 'global/1.0', 'X-Client': 'all' },
+  })
+  assert.deepEqual(helpers.globalHeaderDraft({
+    globalHeaders: { 'User-Agent': 'global/1.0', 'X-Client': 'all' },
+  }), globalDraft)
+  assert.equal(globalDraft.userAgent, 'global/1.0')
+  assert.deepEqual(globalDraft.headers.map(({ name, value }) => ({ name, value })), [
+    { name: 'X-Client', value: 'all' },
+  ])
+  assert.deepEqual(helpers.buildGlobalHeaders(globalDraft), {
+    'User-Agent': 'global/1.0',
+    'X-Client': 'all',
+  })
+  const mixedCase = helpers.globalHeaderDraft({
+    globalHeaders: {
+      'user-agent': 'global/lower',
+      'User-Agent': 'global/upper',
+      'X-Client': 'first',
+      'x-client': 'last',
+    },
+  })
+  assert.equal(mixedCase.userAgent, 'global/upper')
+  assert.deepEqual(mixedCase.headers.map(({ name, value }) => ({ name, value })), [
+    { name: 'x-client', value: 'last' },
   ])
 
   const controls = {

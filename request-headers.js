@@ -14,6 +14,8 @@ const runtime = globalThis[RUNTIME_KEY] ??= {
   sequence: 0,
 }
 
+const SETTINGS_NAMESPACE = 'dsh-custom-provider-settings'
+
 /**
  * Run one host-side operation with explicit final request headers.
  * @param headers - request headers for this operation only.
@@ -21,30 +23,39 @@ const runtime = globalThis[RUNTIME_KEY] ??= {
  * @returns the callback result.
  */
 export function runWithRequestHeaders(headers, callback) {
-  return runtime.storage.run(headers, callback)
+  return runtime.storage.run(objectOf(headers), callback)
 }
 
 /**
- * Read the user-owned headers for one llm-pi-ai provider.
+ * Read the user-owned provider headers and global headers.
  * @param settings - the optional Harness settings service.
  * @param provider - provider route selected by the request.
  * @returns a copied header dict, or undefined when no explicit override exists.
  */
-export function configuredHeaders(settings, provider) {
-  if (typeof provider !== 'string' || provider.length === 0) return undefined
+export function configuredHeaders(settings, provider, includeProvider = true) {
   if (settings === undefined || typeof settings.describe !== 'function') return undefined
-  let descriptor
+  let descriptors
   try {
-    descriptor = settings.describe({ redactSecrets: true })
-      .find(entry => String(entry?.ns) === 'llm-pi-ai')
+    descriptors = settings.describe({ redactSecrets: true })
   } catch {
     return undefined
   }
-  const profile = objectOf(objectOf(objectOf(descriptor?.user).providers)[provider])
-  const raw = objectOf(profile.headers)
-  const entries = Object.entries(raw)
-    .filter(([, value]) => typeof value === 'string')
-  return entries.length === 0 ? undefined : Object.fromEntries(entries)
+  const descriptor = descriptors.find(entry => String(entry?.ns) === 'llm-pi-ai')
+  const globalDescriptor = descriptors.find(entry => String(entry?.ns) === SETTINGS_NAMESPACE)
+  const profile = includeProvider && typeof provider === 'string' && provider.length > 0
+    ? objectOf(objectOf(objectOf(descriptor?.user).providers)[provider])
+    : {}
+  const providerHeaders = Object.fromEntries(Object.entries(objectOf(profile.headers))
+    .filter(([, value]) => typeof value === 'string'))
+  const globalHeaders = objectOf(objectOf(globalDescriptor?.value).globalHeaders)
+  const merged = new Map()
+  for (const source of [globalHeaders, providerHeaders]) {
+    for (const [name, value] of Object.entries(source)) {
+      if (typeof value !== 'string') continue
+      merged.set(name.toLowerCase(), [name, value])
+    }
+  }
+  return merged.size === 0 ? undefined : Object.fromEntries(merged.values())
 }
 
 /**
@@ -70,10 +81,10 @@ function installFetchBridge(ctx) {
     if (runtime.fetch === undefined) {
       const base = globalThis.fetch
       const wrapped = function scopedFetch(input, init) {
-        const headers = runtime.storage.getStore()
-        return headers === undefined
+        const context = runtime.storage.getStore()
+        return context === undefined
           ? base.call(globalThis, input, init)
-          : base.call(globalThis, input, withHeaderOverrides(input, init, headers))
+          : base.call(globalThis, input, withHeaderOverrides(input, init, context))
       }
       runtime.fetch = { base, wrapped }
       globalThis.fetch = wrapped
@@ -88,23 +99,28 @@ function installFetchBridge(ctx) {
 }
 
 function applyLatestDiscovery(target, state) {
+  const installed = state.installedWrapper
+  if (installed !== undefined && target.discoverModels !== installed) return
+  if (installed === undefined && target.discoverModels !== state.base) return
+
   let latest
   for (const entry of state.entries.values()) {
     if (latest === undefined || entry.sequence > latest.sequence) latest = entry
   }
   if (latest === undefined) {
     target.discoverModels = state.base
+    state.installedWrapper = undefined
     return
   }
   const wrapper = async function discoverModelsWithHeaders(settingsNs, request) {
-    if (String(settingsNs) !== 'llm-pi-ai') return state.base.call(this, settingsNs, request)
-    const headers = configuredHeaders(latest.settings(), request?.provider)
+    if (runtime.storage.getStore() !== undefined) return state.base.call(this, settingsNs, request)
+    const headers = configuredHeaders(latest.settings(), request?.provider, String(settingsNs) === 'llm-pi-ai')
     return headers === undefined
       ? state.base.call(this, settingsNs, request)
-      : runtime.storage.run(headers, () => state.base.call(this, settingsNs, request))
+      : runWithRequestHeaders(headers, () => state.base.call(this, settingsNs, request))
   }
-  latest.wrapper = wrapper
   target.discoverModels = wrapper
+  state.installedWrapper = wrapper
 }
 
 function installDiscoveryBridge(ctx, settings) {
@@ -112,11 +128,12 @@ function installDiscoveryBridge(ctx, settings) {
   const state = runtime.discoveryTargets.get(target) ?? {
     base: target.discoverModels,
     entries: new Map(),
+    installedWrapper: undefined,
   }
   runtime.discoveryTargets.set(target, state)
   const token = Symbol('dsh-custom-provider-settings.discovery')
   ctx.effect(() => {
-    state.entries.set(token, { settings, sequence: ++runtime.sequence, wrapper: undefined })
+    state.entries.set(token, { settings, sequence: ++runtime.sequence })
     applyLatestDiscovery(target, state)
     return () => {
       state.entries.delete(token)
@@ -126,14 +143,14 @@ function installDiscoveryBridge(ctx, settings) {
   }, 'dsh-custom-provider-settings.discovery')
 }
 
-function scopedStream(headers, next) {
+function scopedStream(context, next) {
   return (async function* () {
-    const iterable = runtime.storage.run(headers, next)
+    const iterable = runtime.storage.run(context, next)
     const iterator = iterable[Symbol.asyncIterator]()
     let exhausted = false
     try {
       for (;;) {
-        const result = await runtime.storage.run(headers, () => iterator.next())
+        const result = await runtime.storage.run(context, () => iterator.next())
         if (result.done) {
           exhausted = true
           return
@@ -142,7 +159,7 @@ function scopedStream(headers, next) {
       }
     } finally {
       if (!exhausted && typeof iterator.return === 'function') {
-        await runtime.storage.run(headers, () => iterator.return())
+        await runtime.storage.run(context, () => iterator.return())
       }
     }
   })()
@@ -159,6 +176,8 @@ export function installRequestHeaderBridge(ctx) {
   installDiscoveryBridge(ctx, settings)
   ctx.on('llm/stream', (options, next) => {
     const headers = configuredHeaders(settings(), options.provider)
-    return headers === undefined ? next() : scopedStream(headers, next)
+    return headers === undefined
+      ? next()
+      : scopedStream(headers, next)
   })
 }

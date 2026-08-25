@@ -1,14 +1,16 @@
 {
   "name": "dsh-custom-provider-settings",
-  "version": "0.4.0",
-  "description": "Request headers, image input, and reasoning settings for custom DeepSeek Harness providers",
+  "version": "0.5.0",
+  "description": "Global model request headers plus image input, reasoning, and DeepSeek system-role compatibility for custom providers",
   "keywords": [
     "deepseek-harness",
     "dsh",
     "plugin",
     "user-agent",
     "reasoning",
-    "multimodal"
+    "multimodal",
+    "third-party-api",
+    "developer-role"
   ],
   "author": "supersealwqas",
   "repository": {
@@ -35,10 +37,14 @@
     "README.md",
     "README.zh.md",
     "README.i18n.yaml",
-    "LICENSE"
+    "LICENSE",
+    "assets"
   ],
   "scripts": {
     "test": "node --test"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
   },
   "dsh": {
     "bundle": {

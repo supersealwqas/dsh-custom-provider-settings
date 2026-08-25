@@ -10,10 +10,7 @@ window.__ModuleLoader__.load({
     const { createRoot } = require('react-dom/client')
     const {
       Button,
-      IconChevronDownOutline14,
-      IconChevronRightOutline14,
       IconPlusOutline16,
-      IconRefreshOutline16,
       IconTrashOutline16,
       Tooltip,
     } = require('@deepseek-ai/dsh-client-ui-primitives')
@@ -24,26 +21,33 @@ window.__ModuleLoader__.load({
     const THINKING_FORMATS = [
       'openai', 'deepseek', 'openrouter', 'together', 'zai', 'qwen', 'string-thinking', 'ant-ling',
     ]
+    const DEVELOPER_ROLE_APIS = new Set([
+      'openai-completions',
+      'openai-responses',
+      'azure-openai-responses',
+      'openai-codex-responses',
+    ])
+    const USER_AGENT_PRESETS = [
+      'claude-cli/2.1.161 (external, cli)',
+      'claude-cli/2.1.161',
+      'claude-code/1.0.0',
+      'claude-code/0.1.0',
+      'Kilo-Code/1.0',
+    ]
     const HTTP_TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
 
     const zh = {
-      nav: '模型请求设置',
-      cardDesc: '配置第三方模型的请求头、输入能力与思考等级',
-      expand: '展开',
-      collapse: '折叠',
-      refresh: '刷新',
-      retry: '重试',
-      loading: '正在读取模型配置...',
       noNamespace: '当前部署未提供 llm-pi-ai 设置。',
-      noProviders: '请先在“模型”页面添加第三方 Provider。',
       noModels: '此 Provider 没有可编辑的自定义模型。',
       loadFailed: '读取失败',
-      conflict: '配置已被其他页面修改，请刷新后重试。',
       saved: '已保存',
       save: '保存',
       saving: '保存中...',
       headers: '请求头',
+      globalHeaders: '全局模型请求头',
+      globalHeadersDesc: '应用于所有模型 API 请求；自定义提供方的同名局部请求头优先。不填写时使用 Harness 默认值。',
       userAgent: 'User-Agent',
+      userAgentPreset: '预设',
       harnessDefault: '使用 Harness 默认值',
       otherHeaders: '其他请求头',
       headerName: '名称',
@@ -62,12 +66,13 @@ window.__ModuleLoader__.load({
       wireValue: '传输值',
       noWireValue: '留空表示不发送',
       thinkingFormat: '思考参数格式',
+      systemRole: '使用 system 角色发送系统提示词',
+      systemRoleDesc: '通过 DSH 原生兼容配置，支持不接受 developer 角色的第三方接口。',
       autoDetect: '自动检测',
       inputCapability: '输入能力',
       inputInherit: '保持未声明',
       textOnly: '仅文本',
       textAndImage: '文本与图像',
-      models: '个模型',
       validationHeaderName: '请求头名称不合法。',
       validationHeaderValue: '请求头值不能包含换行。',
       validationHeaderDuplicate: '请求头名称不能重复。',
@@ -78,23 +83,17 @@ window.__ModuleLoader__.load({
     }
 
     const en = {
-      nav: 'Model request settings',
-      cardDesc: 'Configure request headers, input capabilities, and reasoning levels for third-party models',
-      expand: 'Expand',
-      collapse: 'Collapse',
-      refresh: 'Refresh',
-      retry: 'Retry',
-      loading: 'Loading model configuration...',
       noNamespace: 'This deployment does not expose llm-pi-ai settings.',
-      noProviders: 'Add a third-party provider on the Models page first.',
       noModels: 'This provider has no editable custom models.',
       loadFailed: 'Failed to load',
-      conflict: 'Settings changed elsewhere. Refresh and try again.',
       saved: 'Saved',
       save: 'Save',
       saving: 'Saving...',
       headers: 'Request headers',
+      globalHeaders: 'Global model request headers',
+      globalHeadersDesc: 'Applied to every model API request; matching custom-provider headers take precedence. Leave empty to use Harness defaults.',
       userAgent: 'User-Agent',
+      userAgentPreset: 'Presets',
       harnessDefault: 'Use Harness default',
       otherHeaders: 'Other headers',
       headerName: 'Name',
@@ -113,12 +112,13 @@ window.__ModuleLoader__.load({
       wireValue: 'Wire value',
       noWireValue: 'Blank sends no value',
       thinkingFormat: 'Reasoning wire format',
+      systemRole: 'Send system prompts with the system role',
+      systemRoleDesc: 'Uses the native DSH compatibility setting for endpoints that reject the developer role.',
       autoDetect: 'Auto-detect',
       inputCapability: 'Input capability',
       inputInherit: 'Leave undeclared',
       textOnly: 'Text only',
       textAndImage: 'Text and images',
-      models: 'models',
       validationHeaderName: 'Header name is invalid.',
       validationHeaderValue: 'Header values cannot contain line breaks.',
       validationHeaderDuplicate: 'Header names must be unique.',
@@ -164,13 +164,39 @@ window.__ModuleLoader__.load({
     function headerState(raw) {
       const headers = objectOf(raw)
       let userAgent = ''
-      const otherHeaders = []
+      const otherHeaders = new Map()
       for (const [name, value] of Object.entries(headers)) {
         if (typeof value !== 'string') continue
-        if (name.toLowerCase() === 'user-agent' && userAgent === '') userAgent = value
-        else otherHeaders.push({ id: crypto.randomUUID(), name, value })
+        const normalized = name.toLowerCase()
+        if (normalized === 'user-agent') {
+          userAgent = value
+          continue
+        }
+        const previous = otherHeaders.get(normalized)
+        otherHeaders.set(normalized, {
+          id: previous?.id ?? `stored-header-${otherHeaders.size}`,
+          name,
+          value,
+        })
       }
-      return { userAgent, otherHeaders }
+      return { userAgent, otherHeaders: [...otherHeaders.values()] }
+    }
+
+    function validateHeaderDraft(value) {
+      if (typeof value.userAgent !== 'string' || /\r|\n/.test(value.userAgent)) {
+        return { key: 'validationHeaderValue' }
+      }
+      const seen = new Set()
+      for (const header of value.headers) {
+        const name = header.name.trim()
+        if (!HTTP_TOKEN.test(name)) return { key: 'validationHeaderName', header: name }
+        if (/\r|\n/.test(header.value)) return { key: 'validationHeaderValue', header: name }
+        const normalized = name.toLowerCase()
+        if (normalized === 'user-agent') return { key: 'validationUserAgentDuplicate', header: name }
+        if (seen.has(normalized)) return { key: 'validationHeaderDuplicate', header: name }
+        seen.add(normalized)
+      }
+      return undefined
     }
 
     function providerDrafts(view) {
@@ -191,6 +217,9 @@ window.__ModuleLoader__.load({
         const thinkingFormat = typeof userCompat.thinkingFormat === 'string'
           ? userCompat.thinkingFormat
           : typeof effectiveCompat.thinkingFormat === 'string' ? effectiveCompat.thinkingFormat : ''
+        const supportsDeveloperRole = typeof userCompat.supportsDeveloperRole === 'boolean'
+          ? userCompat.supportsDeveloperRole
+          : effectiveCompat.supportsDeveloperRole
         const { userAgent, otherHeaders } = headerState(user.headers)
         providers.push({
           id,
@@ -199,6 +228,7 @@ window.__ModuleLoader__.load({
           api: typeof effective.api === 'string' ? effective.api : '',
           defaultEffort,
           thinkingFormat,
+          systemRole: supportsDeveloperRole === false,
           userAgent,
           headers: otherHeaders,
           models,
@@ -223,17 +253,8 @@ window.__ModuleLoader__.load({
     }
 
     function validateProvider(provider) {
-      if (/\r|\n/.test(provider.userAgent)) return { key: 'validationHeaderValue' }
-      const seen = new Set()
-      for (const header of provider.headers) {
-        const name = header.name.trim()
-        if (!HTTP_TOKEN.test(name)) return { key: 'validationHeaderName', header: name }
-        if (/\r|\n/.test(header.value)) return { key: 'validationHeaderValue', header: name }
-        const normalized = name.toLowerCase()
-        if (normalized === 'user-agent') return { key: 'validationUserAgentDuplicate', header: name }
-        if (seen.has(normalized)) return { key: 'validationHeaderDuplicate', header: name }
-        seen.add(normalized)
-      }
+      const headerError = validateHeaderDraft(provider)
+      if (headerError !== undefined) return headerError
       for (const model of provider.models) {
         if (model.mode !== 'custom') continue
         const selected = supportedLevels(model)
@@ -259,35 +280,8 @@ window.__ModuleLoader__.load({
       return Object.fromEntries(entries)
     }
 
-    function buildModels(provider) {
-      return provider.models.map((model) => {
-        const next = clone(model.raw)
-        if (model.inputMode === 'inherit') delete next.input
-        else if (model.inputMode === 'text') next.input = ['text']
-        else next.input = ['text', 'image']
-        if (model.mode === 'inherit') {
-          delete next.reasoningEfforts
-        } else if (model.mode === 'disabled') {
-          next.reasoningEfforts = false
-        } else {
-          next.reasoningEfforts = Object.fromEntries(
-            LEVELS.filter(level => Object.prototype.hasOwnProperty.call(model.efforts, level))
-              .map((level) => {
-                const wire = model.efforts[level]
-                return [level, level === 'off' && (wire === null || wire === '') ? null : String(wire).trim()]
-              }),
-          )
-        }
-        return next
-      })
-    }
-
     function messageOf(error) {
       return error instanceof Error ? error.message : String(error)
-    }
-
-    function patchProvider(list, providerId, update) {
-      return list.map(provider => provider.id === providerId ? update(provider) : provider)
     }
 
     function patchModel(provider, modelId, update) {
@@ -300,21 +294,43 @@ window.__ModuleLoader__.load({
       return next
     }
 
+    function UserAgentField({ value, t, disabled, onValueChange }) {
+      const [preset, setPreset] = useState('')
+      const choosePreset = event => {
+        const next = event.target.value
+        setPreset('')
+        if (next !== '') onValueChange(next)
+      }
+      return h('label', { className: 'dsh-mrs-field' },
+        h('span', null, t('userAgent')),
+        h('div', { className: 'dsh-mrs-user-agent-controls' },
+          h('input', {
+            type: 'text', value, placeholder: t('harnessDefault'),
+            disabled, onChange: event => onValueChange(event.target.value),
+          }),
+          h('select', {
+            value: preset, disabled,
+            'aria-label': t('userAgentPreset'),
+            onChange: choosePreset,
+          },
+          h('option', { value: '' }, t('userAgentPreset')),
+          USER_AGENT_PRESETS.map(item => h('option', { value: item, key: item }, item))),
+        ),
+      )
+    }
+
     function HeaderEditor({ provider, t, writable, busy, updateProvider }) {
       const updateHeaders = headers => updateProvider(provider.id, current => ({ ...current, headers }))
       return h('section', { className: 'dsh-mrs-band' },
         h('h4', null, t('headers')),
-        h('label', { className: 'dsh-mrs-field' },
-          h('span', null, t('userAgent')),
-          h('input', {
-            type: 'text',
-            value: provider.userAgent,
-            placeholder: t('harnessDefault'),
-            disabled: !writable || busy,
-            onChange: event => updateProvider(provider.id, current => ({
-              ...current, userAgent: event.target.value,
-            })),
+        h(UserAgentField, {
+          value: provider.userAgent,
+          t,
+          disabled: !writable || busy,
+          onValueChange: value => updateProvider(provider.id, current => ({
+            ...current, userAgent: value,
           })),
+        }),
         h('div', { className: 'dsh-mrs-subhead' },
           h('span', null, t('otherHeaders')),
           h(Button, {
@@ -346,6 +362,71 @@ window.__ModuleLoader__.load({
                 disabled: !writable || busy,
                 onClick: () => updateHeaders(provider.headers.filter(item => item.id !== header.id)),
               }, h(IconTrashOutline16, { size: 16 })))))))
+    }
+
+    function GlobalHeaderEditor({ initial, t, writable, busy, save }) {
+      const [draft, setDraft] = useState(initial)
+      const initialSignature = JSON.stringify(initial)
+      useEffect(() => setDraft(initial), [initialSignature])
+      const updateHeaders = headers => setDraft(current => ({ ...current, headers }))
+      const error = validateHeaderDraft(draft)
+      const detail = error === undefined
+        ? ''
+        : `${error.header ?? ''}${error.header ? ': ' : ''}${t(error.key)}`
+      const rows = draft.headers.map(header => h('div', { className: 'dsh-mrs-header-row', key: header.id },
+        h('input', {
+          type: 'text', value: header.name, placeholder: t('headerName'),
+          'aria-label': t('headerName'), disabled: !writable || busy,
+          onChange: event => updateHeaders(draft.headers.map(item => item.id === header.id
+            ? { ...item, name: event.target.value } : item)),
+        }),
+        h('input', {
+          type: 'text', value: header.value, placeholder: t('headerValue'),
+          'aria-label': t('headerValue'), disabled: !writable || busy,
+          onChange: event => updateHeaders(draft.headers.map(item => item.id === header.id
+            ? { ...item, value: event.target.value } : item)),
+        }),
+        h(Tooltip, { label: t('removeHeader'), side: 'top' },
+          h(Button, {
+            variant: 'toolbar', size: 'sm', 'aria-label': t('removeHeader'),
+            disabled: !writable || busy,
+            onClick: () => updateHeaders(draft.headers.filter(item => item.id !== header.id)),
+          }, h(IconTrashOutline16, { size: 16 }))),
+      ))
+      return h('section', { className: 'dsh-mrs-band dsh-mrs-global' },
+        h('h4', null, t('globalHeaders')),
+        h('p', { className: 'dsh-mrs-muted' }, t('globalHeadersDesc')),
+        h(UserAgentField, {
+          value: draft.userAgent,
+          t,
+          disabled: !writable || busy,
+          onValueChange: value => setDraft(current => ({ ...current, userAgent: value })),
+        }),
+        h('div', { className: 'dsh-mrs-subhead' },
+          h('span', null, t('otherHeaders')),
+          h(Button, {
+            variant: 'outline', size: 'sm', icon: h(IconPlusOutline16, { size: 14 }),
+            disabled: !writable || busy,
+            onClick: () => updateHeaders([
+              ...draft.headers, { id: crypto.randomUUID(), name: '', value: '' },
+            ]),
+          }, t('addHeader'))),
+        rows.length === 0 ? null : h('div', { className: 'dsh-mrs-header-list' }, rows),
+        detail ? h('p', { className: 'dsh-mrs-error', role: 'alert' }, detail) : null,
+        h('div', { className: 'dsh-mrs-actions' },
+          h(Button, {
+            variant: 'primary', size: 'sm', disabled: !writable || busy || error !== undefined,
+            onClick: () => void save(draft),
+          }, busy ? t('saving') : t('save'))))
+    }
+
+    function globalHeaderDraft(value) {
+      const { userAgent, otherHeaders } = headerState(objectOf(value).globalHeaders)
+      return { userAgent, headers: otherHeaders }
+    }
+
+    function buildGlobalHeaders(draft) {
+      return buildHeaders({ userAgent: draft.userAgent, headers: draft.headers })
     }
 
     function ModelEditor({ provider, model, t, writable, busy, updateProvider }) {
@@ -457,42 +538,27 @@ window.__ModuleLoader__.load({
                     h('option', { value: '' }, t('autoDetect')),
                     THINKING_FORMATS.map(format => h('option', { value: format, key: format }, format))))
                 : null),
+            DEVELOPER_ROLE_APIS.has(provider.api)
+              ? h('label', { className: 'dsh-mrs-compat-check' },
+                  h('input', {
+                    type: 'checkbox', checked: provider.systemRole === true,
+                    disabled: !writable || busy,
+                    onChange: event => updateProvider(provider.id, current => ({
+                      ...current, systemRole: event.target.checked,
+                    })),
+                  }),
+                  h('span', null,
+                    h('strong', null, t('systemRole')),
+                    h('small', null, t('systemRoleDesc'))))
+              : null,
             h('div', { className: 'dsh-mrs-models' }, provider.models.map(model => h(ModelEditor, {
               key: model.id, provider, model, t, writable, busy, updateProvider,
             })))))
     }
 
-    function ProviderEditor({ provider, t, writable, busy, dirty, updateProvider, saveProvider }) {
-      const [open, setOpen] = useState(false)
-      const validation = validateProvider(provider)
-      const detail = validation === undefined ? '' : `${validation.header ?? validation.model ?? ''}${validation.header || validation.model ? ': ' : ''}${t(validation.key)}`
-      return h('section', { className: `dsh-mrs-provider${open ? ' dsh-mrs-provider-open' : ''}` },
-        h('button', {
-          type: 'button', className: 'dsh-mrs-provider-head', 'aria-expanded': open,
-          onClick: () => setOpen(!open),
-        },
-          h('span', { className: 'dsh-mrs-provider-icon' }, open
-            ? h(IconChevronDownOutline14, { size: 14 })
-            : h(IconChevronRightOutline14, { size: 14 })),
-          h('span', { className: 'dsh-mrs-provider-name' },
-            h('strong', null, provider.name),
-            provider.name === provider.id ? null : h('code', null, provider.id)),
-          provider.api ? h('span', { className: 'dsh-mrs-tag' }, provider.api) : null,
-          h('span', { className: 'dsh-mrs-count' }, `${provider.models.length} ${t('models')}`)),
-        h('div', { className: 'dsh-mrs-provider-body', hidden: !open },
-          h(HeaderEditor, { provider, t, writable, busy, updateProvider }),
-          h(ModelSettingsEditor, { provider, t, writable, busy, updateProvider }),
-          detail ? h('p', { className: 'dsh-mrs-error', role: 'alert' }, detail) : null,
-          h('footer', { className: 'dsh-mrs-actions' },
-            h(Button, {
-              variant: 'primary', size: 'sm',
-              disabled: !writable || busy || !dirty || validation !== undefined,
-              onClick: () => void saveProvider(provider),
-            }, busy ? t('saving') : t('save')))))
-    }
-
     const CUSTOM_TAGS = new Set(['Custom', '自定义'])
     const CUSTOM_SUMMARIES = new Set(['Customized settings', '自定义设置'])
+    const MODELS_TITLES = new Set(['Models', '模型'])
     const SUBMIT_LABELS = new Set(['Apply', '保存', 'Create provider', '创建提供方'])
     const MODEL_ID_LABEL = /^(?:Model ID|模型 ID)\s+(\d+)$/
 
@@ -614,11 +680,16 @@ window.__ModuleLoader__.load({
             ? { op: 'set', path: [...root, 'reasoning'], value: provider.defaultEffort }
             : { op: 'unset', path: [...root, 'reasoning'] },
         )
-        if (provider.api === 'openai-completions') {
-          ops.push(provider.thinkingFormat
-            ? { op: 'set', path: [...root, 'compat', 'thinkingFormat'], value: provider.thinkingFormat }
-            : { op: 'unset', path: [...root, 'compat', 'thinkingFormat'] })
-        }
+      }
+      if (provider.api === 'openai-completions') {
+        ops.push(provider.thinkingFormat
+          ? { op: 'set', path: [...root, 'compat', 'thinkingFormat'], value: provider.thinkingFormat }
+          : { op: 'unset', path: [...root, 'compat', 'thinkingFormat'] })
+      }
+      if (DEVELOPER_ROLE_APIS.has(provider.api)) {
+        ops.push(provider.systemRole === true
+          ? { op: 'set', path: [...root, 'compat', 'supportsDeveloperRole'], value: false }
+          : { op: 'unset', path: [...root, 'compat', 'supportsDeveloperRole'] })
       }
       return ops
     }
@@ -681,12 +752,16 @@ window.__ModuleLoader__.load({
       const mounts = new Map()
       let declared = []
       let namespace
+      let globalNamespace
       let writable = false
       let observer
       let scheduled = false
       let disposed = false
       let toast
       let toastTimer
+      let globalPoint
+      let globalRoot
+      let globalBusy = false
 
       const showToast = (text, failed = false) => {
         if (toast === undefined) {
@@ -703,11 +778,12 @@ window.__ModuleLoader__.load({
 
       const initialProvider = (kind, entry, form) => {
         if (kind === 'existing') {
-          const saved = providerDrafts(namespace).find(provider => provider.id === entry.provider)
+          const saved = providerDrafts(namespace)
+            .find(provider => provider.id === entry.provider)
           if (saved !== undefined) return saved
         }
         return syncFormProvider({
-          id: '', name: '', api: '', defaultEffort: '', thinkingFormat: '',
+          id: '', name: '', api: '', defaultEffort: '', thinkingFormat: '', systemRole: false,
           userAgent: '', headers: [], models: [],
         }, { kind, entry, form })
       }
@@ -740,8 +816,43 @@ window.__ModuleLoader__.load({
 
       const scan = () => {
         scheduled = false
-        if (disposed || namespace === undefined) return
+        if (disposed) return
         const live = new Set()
+        if (globalNamespace !== undefined) {
+          const title = [...document.querySelectorAll('h2')]
+            .find(node => MODELS_TITLES.has(node.textContent.trim()))
+          const list = title?.parentElement?.querySelector('ul')
+          if (list !== undefined && list !== null) {
+            let point = list.querySelector('[data-dsh-custom-provider-settings-global]')
+            if (point === null) {
+              point = document.createElement('li')
+              point.dataset.dshCustomProviderSettingsGlobal = 'point'
+              point.className = 'dsh-mrs-global-card'
+              list.insertBefore(point, list.firstElementChild)
+            }
+            if (globalPoint !== point) {
+              globalRoot?.unmount()
+              globalPoint = point
+              globalRoot = createRoot(point)
+            }
+            globalRoot.render(h(GlobalHeaderEditor, {
+              initial: globalHeaderDraft(globalNamespace.value),
+              t,
+              writable,
+              busy: globalBusy,
+              save: saveGlobal,
+            }))
+            live.add(point)
+          }
+        }
+        if (namespace === undefined) {
+          if (globalPoint !== undefined && !live.has(globalPoint)) {
+            globalRoot?.unmount()
+            globalRoot = undefined
+            globalPoint = undefined
+          }
+          return
+        }
         for (const summary of document.querySelectorAll('details > summary')) {
           if (!CUSTOM_SUMMARIES.has(summary.textContent.trim())) continue
           const details = summary.parentElement
@@ -804,15 +915,56 @@ window.__ModuleLoader__.load({
             api.llm.providers({}),
             api.settings.describe({}),
           ])
-          if (!providersResponse.result.ok || !settingsResponse.result.ok) return
-          declared = providersResponse.result.value.providers.filter(entry => (
-            entry.settingsNs === 'llm-pi-ai' && entry.declared === true
-          ))
+          if (!settingsResponse.result.ok) return
+          declared = providersResponse.result.ok
+            ? providersResponse.result.value.providers.filter(entry => (
+              entry.settingsNs === 'llm-pi-ai' && entry.declared === true
+            ))
+            : []
           namespace = settingsResponse.result.value.namespaces.find(entry => entry.ns === 'llm-pi-ai')
+          globalNamespace = settingsResponse.result.value.namespaces.find(entry => (
+            entry.ns === 'dsh-custom-provider-settings'
+          ))
           writable = settingsResponse.result.value.writable
           scheduleScan()
         } catch {
           // The official Models page owns load failures; this plugin stays out of its error surface.
+        }
+      }
+
+      const saveGlobal = async (draft) => {
+        globalBusy = true
+        scheduleScan()
+        try {
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            const described = await api.settings.describe({})
+            if (!described.result.ok) throw new Error(described.result.error.message)
+            const view = described.result.value.namespaces.find(entry => (
+              entry.ns === 'dsh-custom-provider-settings'
+            ))
+            if (view === undefined) throw new Error(t('noNamespace'))
+            const headers = buildGlobalHeaders(draft)
+            const response = await api.settings.mutate({
+              ns: 'dsh-custom-provider-settings',
+              ops: Object.keys(headers).length === 0
+                ? [{ op: 'unset', path: ['globalHeaders'] }]
+                : [{ op: 'set', path: ['globalHeaders'], value: headers }],
+              expectedRevision: view.revision,
+            })
+            if (response.result.ok) {
+              showToast(t('saved'))
+              await refresh()
+              return
+            }
+            if (response.result.error.code !== 'settings-conflict' || attempt === 2) {
+              throw new Error(response.result.error.message)
+            }
+          }
+        } catch (error) {
+          showToast(`${t('loadFailed')}: ${messageOf(error)}`, true)
+        } finally {
+          globalBusy = false
+          scheduleScan()
         }
       }
 
@@ -922,7 +1074,7 @@ window.__ModuleLoader__.load({
           document.addEventListener('click', onSubmit, true)
           api.llm.discoverModels = discoverModels
           const disposeSettings = remote.$on('settings/document-updated', (ns) => {
-            if (ns === 'llm-pi-ai') void refresh()
+            if (ns === 'llm-pi-ai' || ns === 'dsh-custom-provider-settings') void refresh()
           })
           void refresh()
           scheduleScan()
@@ -934,6 +1086,9 @@ window.__ModuleLoader__.load({
             if (api.llm.discoverModels === discoverModels) api.llm.discoverModels = originalDiscoverModels
             for (const record of mounts.values()) record.root.unmount()
             mounts.clear()
+            globalRoot?.unmount()
+            globalRoot = undefined
+            globalPoint = undefined
             clearTimeout(toastTimer)
             toast?.remove()
           }
@@ -943,38 +1098,22 @@ window.__ModuleLoader__.load({
 
     const style = document.createElement('style')
     style.textContent = `
-      .dsh-mrs-card{list-style:none;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-3);transition:border-color .16s,background .16s}
-      .dsh-mrs-card:hover{border-color:var(--dsw-alias-label-dimmed)}
-      .dsh-mrs-card-open{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-label-dimmed)}
-      .dsh-mrs-card-header{width:100%;appearance:none;border:0;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:8px}
-      .dsh-mrs-card-header:focus-visible,.dsh-mrs-provider-head:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-      .dsh-mrs-card-headtext{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
-      .dsh-mrs-card-name{font-size:15px;font-weight:600;line-height:1.4;color:var(--dsw-alias-label-primary)}
-      .dsh-mrs-card-desc{font-size:13px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}
-      .dsh-mrs-card-body{border-top:1px solid var(--dsw-alias-border-l2);margin:0 16px;padding:12px 0 8px}
-      .dsh-mrs-card-body[hidden],.dsh-mrs-provider-body[hidden]{display:none}
-      .dsh-mrs-section{container-name:dsh-mrs;container-type:inline-size;display:flex;flex-direction:column;gap:10px;max-width:820px;color:var(--dsw-alias-label-primary)}
-      .dsh-mrs-page-head{height:28px;display:flex;justify-content:flex-end;align-items:center}
-      .dsh-mrs-providers{display:flex;flex-direction:column;border-top:1px solid var(--dsw-alias-border-l2)}
-      .dsh-mrs-provider{border-bottom:1px solid var(--dsw-alias-border-l2)}
-      .dsh-mrs-provider-head{width:100%;appearance:none;border:0;background:transparent;color:inherit;display:flex;align-items:center;gap:9px;padding:12px 2px;text-align:left;cursor:pointer;font:inherit}
-      .dsh-mrs-provider-head:hover{background:var(--dsw-alias-interactive-bg-hover)}
-      .dsh-mrs-provider-icon{display:flex;color:var(--dsw-alias-label-tertiary)}
-      .dsh-mrs-provider-name{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
-      .dsh-mrs-provider-name strong{font-size:14px;line-height:22px;font-weight:600}
-      .dsh-mrs-provider-name code{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}
-      .dsh-mrs-tag{padding:1px 6px;border:1px solid var(--dsw-alias-border-l3);border-radius:4px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary)}
-      .dsh-mrs-count{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);white-space:nowrap}
-      .dsh-mrs-provider-body{display:flex;flex-direction:column;gap:16px;padding:4px 2px 14px 25px}
       .dsh-mrs-band{display:flex;flex-direction:column;gap:10px}
       .dsh-mrs-band h4{margin:0;font-size:13px;line-height:20px;font-weight:600}
       .dsh-mrs-subhead{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
       .dsh-mrs-field,.dsh-mrs-mode,.dsh-mrs-wire{display:flex;flex-direction:column;gap:5px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
       .dsh-mrs-field input,.dsh-mrs-field select,.dsh-mrs-mode select,.dsh-mrs-wire input,.dsh-mrs-header-row input{box-sizing:border-box;width:100%;height:32px;padding:0 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;letter-spacing:0}
       .dsh-mrs-field input:focus,.dsh-mrs-field select:focus,.dsh-mrs-mode select:focus,.dsh-mrs-wire input:focus,.dsh-mrs-header-row input:focus{outline:none;border-color:var(--dsw-alias-brand-primary)}
+      .dsh-mrs-user-agent-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(105px,auto);gap:6px}
+      .dsh-mrs-user-agent-controls select{max-width:180px}
       .dsh-mrs-header-list{display:flex;flex-direction:column;gap:6px}
       .dsh-mrs-header-row{display:grid;grid-template-columns:minmax(130px,.7fr) minmax(180px,1.3fr) 32px;gap:6px;align-items:center}
       .dsh-mrs-route-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+      .dsh-mrs-compat-check{display:flex;align-items:flex-start;gap:8px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+      .dsh-mrs-compat-check input{margin:2px 0 0;accent-color:var(--dsw-alias-brand-primary)}
+      .dsh-mrs-compat-check span{display:flex;flex-direction:column;gap:2px}
+      .dsh-mrs-compat-check strong{font-size:12px;line-height:18px;font-weight:500;color:var(--dsw-alias-label-primary)}
+      .dsh-mrs-compat-check small{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}
       .dsh-mrs-models{display:flex;flex-direction:column;border-top:1px solid var(--dsw-alias-border-l2)}
       .dsh-mrs-model{padding:12px 0;border-bottom:1px solid var(--dsw-alias-border-l2);display:flex;flex-direction:column;gap:10px}
       .dsh-mrs-model-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -991,16 +1130,15 @@ window.__ModuleLoader__.load({
       .dsh-mrs-check input{margin:0;accent-color:var(--dsw-alias-brand-primary)}
       .dsh-mrs-wire input{height:28px;font-family:var(--ds-font-family-code);font-size:12px}
       .dsh-mrs-actions{display:flex;justify-content:flex-end;padding-top:2px}
-      .dsh-mrs-error,.dsh-mrs-success,.dsh-mrs-muted,.dsh-mrs-empty,.dsh-mrs-empty-inline{margin:0;font-size:12px;line-height:18px}
+      .dsh-mrs-error,.dsh-mrs-muted,.dsh-mrs-empty-inline{margin:0;font-size:12px;line-height:18px}
       .dsh-mrs-error{color:var(--dsw-alias-state-error-primary)}
-      .dsh-mrs-success{color:var(--dsw-alias-state-success-primary)}
-      .dsh-mrs-muted,.dsh-mrs-empty,.dsh-mrs-empty-inline{color:var(--dsw-alias-label-tertiary)}
-      .dsh-mrs-empty{padding:18px;border:1px dashed var(--dsw-alias-border-l3);border-radius:8px;text-align:center}
-      .dsh-mrs-state{display:flex;align-items:center;gap:10px}
-      .dsh-mrs-inline{display:flex;flex-direction:column;gap:16px;margin:14px 0;padding:14px 0;border-top:1px solid var(--dsw-alias-border-l2);border-bottom:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary)}
+      .dsh-mrs-muted,.dsh-mrs-empty-inline{color:var(--dsw-alias-label-tertiary)}
+      .dsh-mrs-inline{container-name:dsh-mrs;container-type:inline-size;display:flex;flex-direction:column;gap:16px;margin:14px 0;padding:14px 0;border-top:1px solid var(--dsw-alias-border-l2);border-bottom:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary)}
+      .dsh-mrs-global-card{list-style:none;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:14px 16px;background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-primary)}
+      .dsh-mrs-global{container-name:dsh-mrs;container-type:inline-size;max-width:820px}
       .dsh-mrs-toast{position:fixed;z-index:10000;right:20px;bottom:20px;max-width:min(420px,calc(100vw - 40px));padding:10px 14px;border:1px solid var(--dsw-alias-state-success-primary);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:13px;line-height:20px}
       .dsh-mrs-toast-error{border-color:var(--dsw-alias-state-error-primary)}
-      @container dsh-mrs (max-width:620px){.dsh-mrs-provider-body{padding-left:2px}.dsh-mrs-provider-head{align-items:flex-start}.dsh-mrs-tag,.dsh-mrs-count{display:none}.dsh-mrs-model-head{flex-direction:column}.dsh-mrs-model-controls{width:100%;justify-content:flex-start}.dsh-mrs-mode{width:100%}.dsh-mrs-levels{grid-template-columns:repeat(2,minmax(0,1fr))}.dsh-mrs-header-row{grid-template-columns:1fr 32px}.dsh-mrs-header-row input:nth-child(2){grid-column:1/2}.dsh-mrs-header-row button{grid-column:2;grid-row:1/3}}
+      @container dsh-mrs (max-width:620px){.dsh-mrs-model-head{flex-direction:column}.dsh-mrs-model-controls{width:100%;justify-content:flex-start}.dsh-mrs-mode{width:100%}.dsh-mrs-levels{grid-template-columns:repeat(2,minmax(0,1fr))}.dsh-mrs-header-row{grid-template-columns:1fr 32px}.dsh-mrs-header-row input:nth-child(2){grid-column:1/2}.dsh-mrs-header-row button{grid-column:2;grid-row:1/3}}
     `
     style.dataset.plugin = 'dsh-custom-provider-settings'
     document.head.appendChild(style)
@@ -1018,17 +1156,19 @@ window.__ModuleLoader__.load({
     exports.inject = inject
     exports.__test = {
       buildHeaders,
-      buildModels,
       commonLevels,
-       modelState,
-       extensionOps,
-       formProviderSignature,
-       installFormSync,
-       mergeModelSettings,
-       providerDrafts,
-       syncFormProvider,
+      modelState,
+      extensionOps,
+      formProviderSignature,
+      installFormSync,
+      mergeModelSettings,
+      providerDrafts,
+      syncFormProvider,
       supportedLevels,
       validateProvider,
+      globalHeaderDraft,
+      buildGlobalHeaders,
+      userAgentPresets: USER_AGENT_PRESETS,
     }
     return module.exports
   },

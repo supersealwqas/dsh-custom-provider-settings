@@ -1,12 +1,55 @@
-/** Cordis plugin for custom-provider request headers and reasoning settings. */
+/** Cordis plugin for model request headers and custom-provider settings. */
+import z from '@deepseek-ai/schemastery'
 import { installRequestHeaderBridge, runWithRequestHeaders } from './request-headers.js'
 
 export const name = 'dsh-custom-provider-settings'
-export const inject = ['llm', 'webServer']
+export const inject = ['llm', 'webServer', 'settings']
+
+export const SETTINGS_NAMESPACE = 'dsh-custom-provider-settings'
+const SettingsSchema = z.object({
+  globalHeaders: z.dict(z.string()).default({}),
+})
 
 const DISCOVERY_PATH = '/dsh-custom-provider-settings/discover-models'
 const MAX_BODY_BYTES = 128 * 1024
 const HTTP_TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
+
+function requestHeader(req, name) {
+  const value = req.headers?.[name]
+  return typeof value === 'string' ? value : undefined
+}
+
+function parseAuthority(value) {
+  try {
+    return new URL(`http://${value}`)
+  } catch {
+    return undefined
+  }
+}
+
+function isLoopbackHostname(hostname) {
+  if (hostname === 'localhost' || hostname === '[::1]') return true
+  const parts = hostname.split('.')
+  return parts.length === 4 && parts[0] === '127'
+    && parts.every(part => /^\d{1,3}$/.test(part) && Number(part) <= 255)
+}
+
+function isTrustedDiscoveryRequest(req) {
+  const host = requestHeader(req, 'host')
+  if (host === undefined) return false
+  const hostURL = parseAuthority(host)
+  if (hostURL === undefined || !isLoopbackHostname(hostURL.hostname)) return false
+  if (requestHeader(req, 'sec-fetch-site')?.toLowerCase() === 'cross-site') return false
+  const origin = requestHeader(req, 'origin')
+  if (origin !== undefined) {
+    try {
+      if (new URL(origin).host !== hostURL.host) return false
+    } catch {
+      return false
+    }
+  }
+  return true
+}
 
 class RequestError extends Error {
   constructor(message, status = 400) {
@@ -60,11 +103,31 @@ function requestHeaders(value) {
   return Object.fromEntries(entries)
 }
 
+function mergeHeaders(...sources) {
+  const merged = new Map()
+  for (const source of sources) {
+    for (const [name, value] of Object.entries(objectOf(source))) {
+      if (typeof value !== 'string') continue
+      merged.set(name.toLowerCase(), [name, value])
+    }
+  }
+  return Object.fromEntries(merged.values())
+}
+
 function installDiscoveryRoute(ctx) {
   const handler = async (req, res) => {
+    if (!isTrustedDiscoveryRequest(req)) {
+      writeJson(res, 403, { error: 'forbidden' })
+      return
+    }
     if (req.method !== 'POST') {
       res.setHeader('allow', 'POST')
       writeJson(res, 405, { error: 'method not allowed' })
+      return
+    }
+    const contentType = requestHeader(req, 'content-type')?.split(';', 1)[0]?.trim().toLowerCase()
+    if (contentType !== 'application/json') {
+      writeJson(res, 415, { error: 'content type must be application/json' })
       return
     }
     let request
@@ -75,7 +138,11 @@ function installDiscoveryRoute(ctx) {
       const baseURL = stringField(body.baseURL, 'baseURL', true)
       const api = stringField(body.api, 'api')
       const apiKey = body.apiKey === undefined ? undefined : stringField(body.apiKey, 'apiKey', true)
-      headers = requestHeaders(body.headers)
+      headers = mergeHeaders(
+        requestHeaders(objectOf(objectOf(ctx.get?.('settings')?.describe?.({ redactSecrets: true })
+          ?.find(entry => String(entry?.ns) === SETTINGS_NAMESPACE)?.value).globalHeaders)),
+        requestHeaders(body.headers),
+      )
       request = {
         provider,
         baseURL,
@@ -104,9 +171,21 @@ function installDiscoveryRoute(ctx) {
  * @returns nothing; the context owns every installed effect.
  */
 export function apply(ctx) {
+  const registerSettings = settings => {
+    if (settings?.register === undefined) return
+    settings.register(SETTINGS_NAMESPACE, SettingsSchema, {
+      base: { globalHeaders: {} },
+      validate: value => { requestHeaders(value.globalHeaders) },
+    })
+  }
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['settings'], settingsCtx => registerSettings(settingsCtx.settings))
+  } else {
+    registerSettings(ctx.get?.('settings'))
+  }
   installRequestHeaderBridge(ctx)
   ctx.effect(() => installDiscoveryRoute(ctx), 'dsh-custom-provider-settings.discovery-route')
 }
 
 export { DISCOVERY_PATH }
-export const __test = { MAX_BODY_BYTES, installDiscoveryRoute }
+export const __test = { MAX_BODY_BYTES, installDiscoveryRoute, isTrustedDiscoveryRequest }

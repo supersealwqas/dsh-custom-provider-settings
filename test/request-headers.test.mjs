@@ -18,6 +18,24 @@ function settingsWith(headers) {
   }
 }
 
+function settingsWithGlobal(globalHeaders, providerHeaders = undefined) {
+  return {
+    describe(options) {
+      assert.deepEqual(options, { redactSecrets: true })
+      return [
+        {
+          ns: 'llm-pi-ai',
+          user: { providers: { relay: { headers: providerHeaders } } },
+        },
+        {
+          ns: 'dsh-custom-provider-settings',
+          value: { globalHeaders },
+        },
+      ]
+    },
+  }
+}
+
 test('reads only explicitly configured llm-pi-ai provider headers', () => {
   const settings = settingsWith({ 'User-Agent': 'custom/1.0', 'X-Route': 'relay' })
   assert.deepEqual(configuredHeaders(settings, 'relay'), {
@@ -26,6 +44,25 @@ test('reads only explicitly configured llm-pi-ai provider headers', () => {
   })
   assert.equal(configuredHeaders(settings, 'missing'), undefined)
   assert.equal(configuredHeaders(undefined, 'relay'), undefined)
+})
+
+test('global headers apply to every provider while local headers have higher priority', () => {
+  const settings = settingsWithGlobal({
+    'User-Agent': 'global/1.0',
+    'X-Global': 'all-models',
+  }, {
+    'user-agent': 'provider/1.0',
+    'X-Route': 'relay',
+  })
+  assert.deepEqual(configuredHeaders(settings, 'relay'), {
+    'user-agent': 'provider/1.0',
+    'X-Route': 'relay',
+    'X-Global': 'all-models',
+  })
+  assert.deepEqual(configuredHeaders(settings, 'deepseek-official'), {
+    'User-Agent': 'global/1.0',
+    'X-Global': 'all-models',
+  })
 })
 
 test('merges Request and init headers before applying case-insensitive overrides', () => {
@@ -130,6 +167,72 @@ test('scopes overrides to the selected provider for streams and model discovery'
     })
   } finally {
     for (const dispose of effects.reverse()) dispose()
+    globalThis.fetch = nativeFetch
+  }
+})
+
+
+test('global headers scope every model stream including official providers', async () => {
+  const nativeFetch = globalThis.fetch
+  globalThis.fetch = async (_input, init) => new Response(JSON.stringify(
+    Object.fromEntries(new Headers(init?.headers)),
+  ), { status: 200, headers: { 'content-type': 'application/json' } })
+  const effects = []
+  let streamListener
+  const settings = settingsWithGlobal({ 'User-Agent': 'global/2.0', 'X-Global': 'yes' })
+  const ctx = {
+    llm: { discoverModels: async () => [] },
+    get(service) { return service === 'settings' ? settings : undefined },
+    effect(callback) { effects.push(callback()) },
+    on(event, listener) {
+      assert.equal(event, 'llm/stream')
+      streamListener = listener
+    },
+  }
+  try {
+    installRequestHeaderBridge(ctx)
+    for (const provider of ['deepseek-official', 'openai-official', 'relay']) {
+      const stream = streamListener({ provider }, () => (async function* () {
+        const response = await fetch('https://example.test/chat', {
+          headers: { 'user-agent': 'harness-default', accept: 'application/json' },
+        })
+        yield await response.json()
+      })())
+      const chunks = []
+      for await (const chunk of stream) chunks.push(chunk)
+      assert.deepEqual(chunks, [{
+        accept: 'application/json',
+        'user-agent': 'global/2.0',
+        'x-global': 'yes',
+      }])
+    }
+  } finally {
+    for (const dispose of effects.reverse()) dispose()
+    globalThis.fetch = nativeFetch
+  }
+})
+
+test('does not restore another discoverModels wrapper during disposal', async () => {
+  const nativeFetch = globalThis.fetch
+  globalThis.fetch = nativeFetch
+  const base = async () => []
+  const llm = { discoverModels: base }
+  const settings = settingsWithGlobal({ 'User-Agent': 'global/1.0' })
+  const effects = []
+  const ctx = {
+    llm,
+    get(service) { return service === 'settings' ? settings : undefined },
+    effect(callback) { effects.push(callback()) },
+    on() {},
+  }
+  try {
+    installRequestHeaderBridge(ctx)
+    const pluginWrapper = llm.discoverModels
+    const laterWrapper = async (...args) => pluginWrapper(...args)
+    llm.discoverModels = laterWrapper
+    for (const dispose of effects.reverse()) dispose()
+    assert.equal(llm.discoverModels, laterWrapper)
+  } finally {
     globalThis.fetch = nativeFetch
   }
 })

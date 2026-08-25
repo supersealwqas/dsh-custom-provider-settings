@@ -2,9 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { apply, DISCOVERY_PATH, __test } from '../index.js'
 
-function request(method, body = '') {
+function request(method, body = '', headers = {}) {
   return {
     method,
+    headers: {
+      host: '127.0.0.1:3080',
+      'content-type': 'application/json',
+      ...headers,
+    },
     async *[Symbol.asyncIterator]() {
       if (body.length > 0) yield Buffer.from(body)
     },
@@ -135,6 +140,39 @@ test('rejects invalid and oversized payloads without exposing discovery secrets'
     assert.deepEqual(JSON.parse(failed.body), { error: 'model discovery failed' })
     assert.equal(failed.body.includes(secret), false)
     assert.equal(failed.body.includes(headerSecret), false)
+  } finally {
+    for (const dispose of harness.effects.reverse()) dispose()
+  }
+})
+
+test('rejects untrusted discovery requests before reading the body', async () => {
+  let read = false
+  const harness = pluginContext(async () => {
+    throw new Error('must not discover')
+  })
+  try {
+    apply(harness.ctx)
+    const body = request('POST', JSON.stringify({
+      provider: 'relay',
+      baseURL: 'https://attacker.example/v1',
+      api: 'openai-completions',
+    }), { host: 'attacker.example', 'sec-fetch-site': 'cross-site' })
+    body[Symbol.asyncIterator] = async function* () {
+      read = true
+      yield Buffer.from('{}')
+    }
+    const rejected = response()
+    await harness.route.handler(body, rejected)
+    assert.equal(rejected.status, 403)
+    assert.equal(read, false)
+
+    const wrongOrigin = response()
+    await harness.route.handler(request('POST', '{}', { origin: 'http://127.0.0.1:3080.evil.test' }), wrongOrigin)
+    assert.equal(wrongOrigin.status, 403)
+
+    const wrongContentType = response()
+    await harness.route.handler(request('POST', '{}', { 'content-type': 'text/plain' }), wrongContentType)
+    assert.equal(wrongContentType.status, 415)
   } finally {
     for (const dispose of harness.effects.reverse()) dispose()
   }
