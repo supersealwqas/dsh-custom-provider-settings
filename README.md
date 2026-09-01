@@ -1,48 +1,48 @@
-# DSH Custom Provider Settings Plugin
+# DSH 自定义模型提供方设置插件
 
-English | [中文](README.zh.md)
+中文 | [English](README.en.md)
 
-A WebUI plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) that adds global model request headers and extends user-defined custom providers with per-provider headers, image-input declarations, reasoning-level settings, and native system-role compatibility controls. It loads through the DSH plugin system and does not modify Harness source files.
+为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) WebUI 增加全局模型请求头，并为用户添加的自定义模型提供方补充局部请求头、图像输入、思考等级和原生 system 角色兼容设置。插件通过 DSH 插件机制加载，不修改 Harness 源代码。
 
-> Global request headers apply to every channel and model, including official DeepSeek, built-in third-party, and custom providers. Per-provider headers, model capabilities, and compatibility controls remain limited to providers carrying the Custom tag.
+> 全局请求头会作用于所有渠道和所有模型，包括 DeepSeek 官方、内置第三方和自定义提供方；局部请求头、模型能力和兼容性设置仍只显示在带“自定义”标记的提供方中。
 
-## Features
+## 功能
 
-- Configure `User-Agent` and additional HTTP request headers for each custom provider.
-- Configure global `User-Agent` and additional headers in the WebUI for every model request.
-- Fill either global or per-provider `User-Agent` fields from common presets while retaining free-form input.
-- Apply the same custom headers to normal model requests and Fetch available models.
-- Declare each custom model as text-only or text-and-image capable.
-- Configure the reasoning levels exposed for each model and map every level to the value sent to its API.
-- Set a provider-level default reasoning level.
-- Configure the reasoning parameter format for `openai-completions` providers.
-- Manage DSH's native `compat.supportsDeveloperRole` switch for each compatible custom OpenAI provider whose endpoint rejects `developer` messages.
-- Restore the original Harness request-header behavior by clearing the global headers.
+- 为每个自定义提供方配置 `User-Agent` 和其他 HTTP 请求头。
+- 在 WebUI 中配置全局 `User-Agent` 和其他请求头，作为所有模型 API 请求的通用请求头。
+- 为全局和局部 `User-Agent` 提供常用预设，同时保留自由输入。
+- 将同一组自定义请求头用于普通模型请求和“获取可用模型”。
+- 将每个自定义模型声明为仅文本或支持文本与图像输入。
+- 配置模型可选择的思考等级，并把每个等级映射为 API 实际接收的值。
+- 设置提供方默认思考等级。
+- 为 `openai-completions` 提供方配置思考参数格式。
+- 按自定义提供方管理 DSH 原生的 `compat.supportsDeveloperRole`，兼容拒绝 `developer` 消息的 OpenAI 协议第三方接口。
+- 清空全局请求头后恢复 Harness 原有请求头行为。
 
-## Demo
+## 实机演示
 
-### Custom provider settings
+### 自定义提供方设置
 
-The plugin inserts request-header and model-capability fields into the existing custom-provider form. The highlighted areas show `User-Agent`, additional headers, image input, the default reasoning level, and per-model reasoning mappings.
+插件会在原有的自定义提供方表单中插入请求头和模型能力配置。红框区域展示了 `User-Agent`、其他请求头、图像输入、默认思考等级以及每个模型的思考等级映射。
 
-![Custom provider request headers, image input, and reasoning settings](assets/img01.png)
+![自定义提供方的请求头、图像输入和思考等级设置](assets/img01.png)
 
-### Reasoning selector
+### 思考等级选择器
 
-Enabled reasoning levels appear in the conversation composer. The example exposes Default, Off, Low, Medium, High, Xhigh, and Max, with Xhigh selected.
+启用的思考等级会出现在对话输入框中。图中提供 Default、Off、Low、Medium、High、Xhigh 和 Max，并选择了 Xhigh。
 
-![Reasoning-level selector in the DeepSeek Harness conversation composer](assets/img02.png)
+![DeepSeek Harness 对话输入框中的思考等级选择器](assets/img02.png)
 
-## Installation
+## 安装
 
-### Prerequisites
+### 安装前准备
 
-- Node.js `^22.19.0` or `>=24.0.0`; Node.js 24 LTS is recommended.
-- Git, used to install the plugin from GitHub.
-- pnpm. `dsh plugin` invokes pnpm in the Web profile directory to manage plugins.
-- DeepSeek Harness `0.1.1-rc.2` or a compatible release with the `web` profile and native `supportsDeveloperRole` support.
+- Node.js `^22.19.0` 或 `>=24.0.0`，建议使用 Node.js 24 LTS。
+- Git，用于从 GitHub 获取插件。
+- pnpm。`dsh plugin` 会在 Web profile 目录中调用 pnpm 管理插件。
+- DeepSeek Harness `0.1.1-rc.2` 或兼容版本的 `web` profile，并且原生支持 `supportsDeveloperRole`。
 
-Check the environment in PowerShell:
+可先在 PowerShell 中检查环境：
 
 ```powershell
 node --version
@@ -52,45 +52,43 @@ corepack enable
 pnpm --version
 ```
 
-If `corepack enable` fails because of insufficient permissions, run it once from an administrator PowerShell or follow the [pnpm installation guide](https://pnpm.io/installation).
+如果 `corepack enable` 因权限不足失败，请使用管理员 PowerShell 再执行一次，或者按照 [pnpm 官方安装说明](https://pnpm.io/installation)安装。
 
-Stop the running WebUI before installing, upgrading, or removing the plugin, then restart it when the command completes.
+安装、升级或卸载插件前，建议先停止正在运行的 WebUI，操作完成后再重新启动。
 
-### Option 1: Install a release TGZ (recommended)
+### 方法一：安装 Release TGZ（推荐）
 
-This installs a tested, fixed version that does not change with the `main` branch. To install `v0.5.0`:
-
-> The `v0.5.0` URL becomes available after this reviewed version is published as a GitHub Release.
+这种方式安装经过测试的固定版本，不会随着 `main` 分支变化。安装 `v0.5.0`：
 
 ```powershell
 npx --yes -p @deepseek-ai/dsh dsh plugin --profile web add https://github.com/supersealwqas/dsh-custom-provider-settings/releases/download/v0.5.0/dsh-custom-provider-settings-0.5.0.tgz
 ```
 
-Start the WebUI after installation:
+安装完成后启动 WebUI：
 
 ```powershell
 npx --yes -p @deepseek-ai/dsh dsh web
 ```
 
-The WebUI listens on `http://127.0.0.1:3080` by default. If `dsh` is installed globally, the shorter `dsh plugin ...` and `dsh web` forms are equivalent.
+WebUI 默认地址为 `http://127.0.0.1:3080`。如果已经全局安装 `dsh`，可以使用更短的 `dsh plugin ...` 和 `dsh web`。
 
-### Option 2: Install from the GitHub main branch
+### 方法二：从 GitHub 主分支安装
 
-This installs the current `main` branch and is suitable for users who want the newest changes immediately. On first use, `npx` downloads the official DSH NPM package and its dependencies:
+这种方式直接安装仓库当前的 `main` 分支，适合希望立即获取最新改动的用户。首次运行时，`npx` 会下载官方 DSH NPM 包及其依赖：
 
 ```powershell
 npx --yes -p @deepseek-ai/dsh dsh plugin --profile web add github:supersealwqas/dsh-custom-provider-settings
 ```
 
-Start the WebUI after installation:
+安装完成后启动 WebUI：
 
 ```powershell
 npx --yes -p @deepseek-ai/dsh dsh web
 ```
 
-### Option 3: Install from a local checkout
+### 方法三：从本地仓库安装
 
-Use this method when changing or debugging the plugin. Create a TGZ package in the repository and install it into the Web profile:
+这种方法适合修改或调试插件。进入本仓库后生成 TGZ 安装包，再安装到 Web profile：
 
 ```powershell
 New-Item -ItemType Directory -Force .\dist
@@ -99,36 +97,36 @@ npx --yes -p @deepseek-ai/dsh dsh plugin --profile web add .\dist\dsh-custom-pro
 npx --yes -p @deepseek-ai/dsh dsh web
 ```
 
-The `dist` directory and TGZ files are ignored by `.gitignore` and are not uploaded to the repository.
+`dist` 目录和 TGZ 文件已被 `.gitignore` 忽略，不会上传到仓库。
 
-### Upgrade
+### 升级
 
-Stop the WebUI and run the matching `add` command again. DSH updates the installed plugin without requiring a separate removal. For a TGZ installation, replace the version and filename in the command with the target release. Restart the WebUI afterward.
+停止 WebUI 后，再次执行对应的 `add` 命令即可更新插件，不需要先卸载。使用 TGZ 方式时，请把安装命令中的版本号和文件名改为目标版本，可用版本见 [Releases](https://github.com/supersealwqas/dsh-custom-provider-settings/releases)。完成后重新启动 WebUI。
 
-### Uninstall
+### 卸载
 
 ```powershell
 npx --yes -p @deepseek-ai/dsh dsh plugin --profile web remove dsh-custom-provider-settings
 ```
 
-Restart the WebUI to remove the plugin controls and behavior. Settings already stored in `settings.yaml`, including global headers and provider extension fields, are not deleted automatically.
+重新启动 WebUI 后，插件加入的配置区域和功能会被移除；已经写入 `settings.yaml` 的全局请求头和提供方扩展字段不会被主动删除。
 
-## Usage
+## 使用方法
 
-1. Open Settings > Models.
-2. In the Global model request headers area at the top of the model list, enter a `User-Agent` or other headers. Leave it empty to keep Harness defaults.
-3. If needed, edit a provider carrying the Custom tag that already contains a model, or choose Add provider > Add a custom provider and enter its models.
-4. In the inserted per-provider Request headers area, configure headers for that custom provider; matching local values take precedence over global values.
-5. For a compatible custom OpenAI provider, enable `Use the system role` when its endpoint rejects the `developer` role. An existing native `supportsDeveloperRole: false` setting appears as an already-checked box.
-6. Under Model capabilities, choose each model's input and reasoning capabilities. Select Text and images only when both the API and model support image input.
-7. Use the original Apply or Create provider button. The plugin saves its fields after the Harness form succeeds.
-8. Start a new conversation and select the model; global headers are applied automatically.
+1. 打开“设置” > “模型”。
+2. 在模型列表顶部的“全局模型请求头”区域填写 `User-Agent` 或其他请求头。留空表示继续使用 Harness 内置默认请求头。
+3. 需要时编辑带“自定义”标记且已经包含模型的提供方，或者选择“添加提供方” > “添加自定义提供方”并填写模型。
+4. 在插件插入的“请求头”区域配置仅针对该自定义提供方的请求头；同名时由这个局部值覆盖全局值。
+5. 如果兼容的 OpenAI 协议自定义提供方拒绝 `developer` 角色，请勾选“使用 system 角色发送系统提示词”。已有原生 `supportsDeveloperRole: false` 配置会自动显示为已勾选。
+6. 在“模型能力”中选择每个模型的输入能力和思考能力。只有 API 和模型都支持图像输入时，才选择“文本与图像”。
+7. 使用原表单的“保存”或“创建提供方”按钮。Harness 原表单保存成功后，插件会继续保存扩展字段。
+8. 新建对话，选择模型；全局请求头会自动用于该模型请求。
 
-Fetch available models uses the request-header values currently entered in the same form, including values that have not been saved yet. This allows model discovery to work with endpoints that require a particular `User-Agent` or another custom header.
+“获取可用模型”会使用同一表单中当前填写的请求头，包括尚未保存的值。因此，必须依赖特定 `User-Agent` 或其他请求头的接口也可以正常获取模型列表。
 
-Global headers are also applied to model discovery. The merge order is Harness defaults, global headers, then custom-provider headers, so matching local values have the highest priority.
+全局请求头也会用于模型发现请求。请求头合并顺序为 Harness 默认值、全局请求头、自定义提供方局部请求头，因此局部同名字段的优先级最高。
 
-Both global and per-provider `User-Agent` fields include these presets:
+全局和自定义提供方局部的 `User-Agent` 输入框都提供以下预设：
 
 - `claude-cli/2.1.161 (external, cli)`
 - `claude-cli/2.1.161`
@@ -136,31 +134,31 @@ Both global and per-provider `User-Agent` fields include these presets:
 - `claude-code/0.1.0`
 - `Kilo-Code/1.0`
 
-Selecting a preset replaces the current text field value. The field remains editable, so any other `User-Agent` can be entered manually.
+选择预设后会替换输入框当前内容；输入框仍然可以手动编辑，也可以填写列表之外的任意 `User-Agent`。
 
-## Verify image input
+## 验证图像输入
 
-1. Set the model's input capability to Text and images and save the provider.
-2. Start a new conversation with that model.
-3. Upload a PNG or JPEG containing a unique string such as `VISION-7392`.
-4. Ask the model to return only the string visible in the image.
+1. 将模型的输入能力设为“文本与图像”，然后保存提供方。
+2. 使用该模型新建对话。
+3. 上传一张包含唯一字符串的 PNG 或 JPEG，例如 `VISION-7392`。
+4. 要求模型只返回图片中看到的字符串。
 
-A correct response confirms that Harness accepted the attachment and the endpoint processed it. This setting declares model capability to Harness; it cannot add vision support to an API or model that does not already provide it.
+模型正确返回字符串，说明 Harness 已接受附件，并且接口成功处理了图片。这个设置只是向 Harness 声明模型能力，无法让原本不支持视觉输入的 API 或模型获得图像识别能力。
 
-## System-role compatibility
+## system 角色兼容
 
-The checkbox is a WebUI layer over DSH's native pi-ai compatibility setting. The plugin does not intercept or rewrite the JSON request body.
+这个复选框只是 DSH 原生 pi-ai 兼容配置的 WebUI，不会由插件拦截或改写 JSON 请求体。
 
-- Checked: writes `compat.supportsDeveloperRole: false` for the current custom provider.
-- Unchecked: removes only `supportsDeveloperRole`, restoring DSH/pi-ai automatic detection.
-- Scope: applies to every model under that provider, without changing other providers.
-- Preservation: leaves neighboring fields such as `thinkingFormat` and `supportsReasoningEffort` unchanged.
+- 勾选：为当前自定义提供方写入 `compat.supportsDeveloperRole: false`。
+- 取消勾选：只删除 `supportsDeveloperRole`，恢复 DSH/pi-ai 自动检测。
+- 作用范围：影响当前提供方下面的所有模型，不影响其他提供方。
+- 字段保留：不会删除同一 `compat` 下的 `thinkingFormat`、`supportsReasoningEffort` 等其他配置。
 
-The control appears only for custom OpenAI protocols whose native pi-ai compatibility type supports this field.
+只有原生 pi-ai 兼容类型支持该字段的 OpenAI 协议自定义提供方才会显示此选项。
 
-## Stored settings
+## 保存的配置
 
-The following example shows the actual namespace hierarchy in `settings.yaml`:
+下面的示例展示了 `settings.yaml` 中实际的命名空间层级：
 
 ```yaml
 dsh-custom-provider-settings:
@@ -187,42 +185,42 @@ llm-pi-ai:
             high: high
 ```
 
-Header values are stored as ordinary text in `settings.yaml`. Keep API keys and other secrets in the Harness credential field instead of custom headers.
+请求头值会以普通文本存入 `settings.yaml`。API 密钥和其他秘密信息应放在 Harness 的凭据字段中，不要写进自定义请求头。
 
-Clearing the global headers removes the global override and restores the original Harness request-header behavior. Clearing a provider's headers only removes that provider's extra override.
+清空全局请求头会删除全局覆盖配置，并恢复 Harness 原有的请求头行为；清空某个提供方请求头只会清除该提供方的额外覆盖。
 
-## Troubleshooting
+## 常见问题
 
-### The plugin settings do not appear
+### 页面没有显示插件配置
 
-Confirm that the plugin is installed in the `web` profile and restart the WebUI after installation. The global header area appears at the top of the Models list; a custom provider without models has no editable model-capability settings.
+确认插件已安装到 `web` profile，并在安装后重启 WebUI。全局请求头区域位于“模型”列表顶部；自定义提供方中没有模型时，不会出现可编辑的模型能力配置。
 
-### Fetch available models still fails
+### “获取可用模型”仍然失败
 
-Confirm the Base URL, API key, and API protocol first, then check every `User-Agent` or additional header required by the endpoint. The plugin includes unsaved header values from the active form in the discovery request.
+先确认 Base URL、API Key 和 API 协议正确，再检查接口要求的 `User-Agent` 或其他请求头是否已经填写。插件会把表单中尚未保存的请求头一起用于本次模型列表请求。
 
-### Reasoning levels or image upload are missing in a conversation
+### 对话中没有思考等级或图像上传入口
 
-Save the provider, start a new conversation, and select the model again. Reasoning levels must be enabled for that model, and image upload requires the model to be declared as Text and images.
+保存提供方后新建对话并重新选择模型。思考等级必须在对应模型上启用；图像上传还要求该模型被声明为“文本与图像”。
 
-### A third-party DeepSeek endpoint rejects the developer role
+### 第三方 DeepSeek 接口拒绝 developer 角色
 
-Edit the compatible custom OpenAI provider, enable `Use the system role`, save it, and start a new conversation. The setting is scoped to that provider; the official DeepSeek provider and other custom providers keep their existing request roles.
+编辑对应的兼容 OpenAI 协议自定义提供方，勾选“使用 system 角色发送系统提示词”并保存，然后新建对话。这个设置只作用于当前提供方，官方 DeepSeek 和其他自定义提供方的消息角色保持原样。
 
-### The endpoint works, but the checkbox looks unchecked
+### 接口可以使用，但复选框显示未勾选
 
-Open the provider editor after restarting the WebUI. The checkbox reads the effective native `llm-pi-ai.providers.<provider>.compat.supportsDeveloperRole` value. If the YAML already contains `false` but the UI remains unchecked, force-refresh the page so the browser loads the current plugin client.
+重新启动 WebUI 后再打开提供方编辑页面。复选框会读取原生 `llm-pi-ai.providers.<provider>.compat.supportsDeveloperRole` 的有效值。如果 YAML 中已经是 `false`，界面仍未勾选，请强制刷新页面，确保浏览器加载当前版本的插件前端代码。
 
-## Compatibility and limitations
+## 兼容性与限制
 
-- The current release targets the public plugin interfaces and WebUI in DeepSeek Harness `0.1.1-rc.2`.
-- Global headers are injected into every model channel; custom-provider image, reasoning, compatibility, and per-provider header controls mount only on providers reported by Harness with `declared: true`.
-- The plugin does not modify official or built-in provider model configuration, although global headers still apply to their API requests.
-- Model names, context windows, maximum output values, and other fields owned by the original form are preserved when plugin settings are saved.
-- The current Models page has no provider-form plugin slot. This plugin locates the original accessible labels and mounts its React controls at runtime, so a future Harness form change may require a plugin update.
-- The plugin does not patch DeepSeek Harness source files.
+- 当前版本基于 DeepSeek Harness `0.1.1-rc.2` 的插件接口和 WebUI 开发。
+- 全局请求头会注入所有模型渠道；自定义提供方专属的图像输入、思考等级、兼容性设置和请求头编辑器只挂载到 Harness 报告为 `declared: true` 的提供方。
+- 插件不会修改 DeepSeek 官方和内置第三方提供方的模型配置，但全局请求头仍会作用于它们的 API 请求。
+- 保存插件设置时，会保留原表单管理的模型名称、上下文窗口、最大输出值和其他字段。
+- 当前“模型”页面没有提供方表单插件插槽。本插件通过原页面的无障碍标签定位表单，并在运行时挂载 React 控件，因此 Harness 以后修改表单结构时可能需要更新插件。
+- 插件不会修改 DeepSeek Harness 源代码文件。
 
-## Development and verification
+## 开发与验证
 
 ```powershell
 npm test
@@ -230,10 +228,10 @@ node --check client.js
 npm pack --dry-run
 ```
 
-## Attribution
+## 致谢
 
-The reasoning-settings client logic is adapted from [JuneLearn/dsh-reasoning-settings](https://github.com/JuneLearn/dsh-reasoning-settings) under the MIT License.
+思考等级客户端逻辑改编自 [JuneLearn/dsh-reasoning-settings](https://github.com/JuneLearn/dsh-reasoning-settings)，遵循 MIT License。
 
-## License
+## 许可证
 
-MIT. See [LICENSE](LICENSE). The license retains the copyright notices for this repository and its adapted upstream source.
+本项目使用 MIT License，详见 [LICENSE](LICENSE)。许可证同时保留本仓库和改编来源的版权声明。
